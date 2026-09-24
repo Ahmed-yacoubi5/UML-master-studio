@@ -1,0 +1,6 @@
+{
+  "name": "UML Master Studio",
+  "description": "Visual UML diagram creation and project management studio with multi-diagram projects, touch-optimized canvas, Material 3 design, and AI-assisted generation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
