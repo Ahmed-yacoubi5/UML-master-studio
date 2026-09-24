@@ -269,7 +269,6 @@ export default function App() {
         isDarkMode={isDarkMode}
         setIsDarkMode={setIsDarkMode}
         onOpenAiGenerator={() => setIsAiModalOpen(true)}
-        onReplayIntro={() => setShowIntro(true)}
       />
 
       {/* Main Workspace: Automatically fluid & responsive on all device screen sizes */}

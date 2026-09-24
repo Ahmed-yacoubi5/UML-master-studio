@@ -5,7 +5,6 @@ import {
   Sun,
   FolderKanban,
   Sparkles,
-  Film,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -17,7 +16,6 @@ interface HeaderProps {
   isDarkMode: boolean;
   setIsDarkMode: (dark: boolean) => void;
   onOpenAiGenerator?: () => void;
-  onReplayIntro?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,7 +27,6 @@ export const Header: React.FC<HeaderProps> = ({
   isDarkMode,
   setIsDarkMode,
   onOpenAiGenerator,
-  onReplayIntro,
 }) => {
   return (
     <header className="h-14 border-b border-slate-200 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur px-3 sm:px-5 flex items-center justify-between select-none z-30 shrink-0 transition-colors">
@@ -86,18 +83,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right: Actions */}
       <div className="flex items-center gap-2 shrink-0">
-        {onReplayIntro && (
-          <button
-            onClick={onReplayIntro}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 text-xs font-medium transition-all"
-            title="Play Intro Animation"
-            aria-label="Play Intro Animation"
-          >
-            <Film className="w-3.5 h-3.5 text-indigo-500" />
-            <span className="hidden md:inline text-[11px]">Intro</span>
-          </button>
-        )}
-
         {onOpenAiGenerator && (
           <button
             onClick={onOpenAiGenerator}
