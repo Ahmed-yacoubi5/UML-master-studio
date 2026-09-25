@@ -69,10 +69,13 @@ export async function exportDiagramToPng(
     })),
   };
 
+  const isDarkBg = bg === '#0F172A' || bg === 'black';
+
   renderDiagramToCanvas(ctx, shiftedDiagram, {
     scale,
     backgroundColor: bg,
     showHandles: false,
+    isDarkMode: isDarkBg,
   });
 
   const safeName = (options.filename || diagram.name || 'diagram')

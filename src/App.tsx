@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/common/Header';
 import { ProjectDashboard } from './components/home/ProjectDashboard';
 import { ProjectDetailView } from './components/project/ProjectDetailView';
@@ -7,6 +7,9 @@ import { AiAssistantModal } from './components/modals/AiAssistantModal';
 import { ValidationModal } from './components/modals/ValidationModal';
 import { ExportModal } from './components/modals/ExportModal';
 import { IntroAnimation } from './components/common/IntroAnimation';
+import { ThemeCustomizerModal } from './components/modals/ThemeCustomizerModal';
+import { ColorPalette, getPaletteById } from './types/theme';
+import { getAccessibleTextColor } from './services/colorUtils';
 import {
   Project,
   Diagram,
@@ -46,6 +49,16 @@ export default function App() {
   const [isValidationModalOpen, setIsValidationModalOpen] = useState(false);
   const [currentValidationIssues, setCurrentValidationIssues] = useState<ValidationIssue[]>([]);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
+
+  // Active Color Palette state (16 available palettes)
+  const [activePaletteId, setActivePaletteId] = useState<string>(() => {
+    return localStorage.getItem('uml_theme_palette') || 'blueprint-pro';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('uml_theme_palette', activePaletteId);
+  }, [activePaletteId]);
 
   // Sync theme with document classList
   useEffect(() => {
@@ -221,18 +234,23 @@ export default function App() {
     setProjects(getStoredProjects());
   };
 
-  const handleSaveDiagram = (updatedDiagram: Diagram) => {
-    if (!activeProject) return;
-    const updatedProject: Project = {
-      ...activeProject,
-      diagrams: activeProject.diagrams.map((d) =>
-        d.id === updatedDiagram.id ? updatedDiagram : d
-      ),
-      updatedAt: new Date().toISOString(),
-    };
-    saveProject(updatedProject);
-    setProjects(getStoredProjects());
-  };
+  const handleSaveDiagram = useCallback((updatedDiagram: Diagram) => {
+    setProjects((prevProjects) => {
+      const targetProj = prevProjects.find((p) =>
+        p.diagrams.some((d) => d.id === updatedDiagram.id)
+      );
+      if (!targetProj) return prevProjects;
+      const updatedProject: Project = {
+        ...targetProj,
+        diagrams: targetProj.diagrams.map((d) =>
+          d.id === updatedDiagram.id ? updatedDiagram : d
+        ),
+        updatedAt: new Date().toISOString(),
+      };
+      saveProject(updatedProject);
+      return prevProjects.map((p) => (p.id === updatedProject.id ? updatedProject : p));
+    });
+  }, []);
 
   // AI Generated Apply
   const handleApplyAi = (elements: DiagramElement[], relationships: Relationship[]) => {
@@ -257,6 +275,45 @@ export default function App() {
     handleSaveDiagram(updatedDiagram);
   };
 
+  // Apply chosen color palette to the active diagram elements
+  const handleApplyPaletteToDiagram = (palette: ColorPalette) => {
+    if (!activeDiagram || !activeProject) return;
+
+    const updatedElements = activeDiagram.elements.map((el, i) => {
+      let themeChoice = palette.elementThemes.entity;
+      if (el.type === 'INTERFACE') {
+        themeChoice = palette.elementThemes.service;
+      } else if (el.type === 'USE_CASE' || el.type === 'ACTION') {
+        themeChoice = palette.elementThemes.action;
+      } else if (el.type === 'ACTOR') {
+        themeChoice = palette.elementThemes.security;
+      } else if (i % 3 === 1) {
+        themeChoice = palette.elementThemes.service;
+      } else if (i % 3 === 2) {
+        themeChoice = palette.elementThemes.storage;
+      }
+
+      const accessibleText = getAccessibleTextColor(themeChoice.fill, themeChoice.text);
+
+      return {
+        ...el,
+        style: {
+          ...el.style,
+          fillColor: themeChoice.fill,
+          borderColor: themeChoice.border,
+          textColor: accessibleText,
+        },
+      };
+    });
+
+    const updatedDiagram: Diagram = {
+      ...activeDiagram,
+      elements: updatedElements,
+      updatedAt: new Date().toISOString(),
+    };
+    handleSaveDiagram(updatedDiagram);
+  };
+
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans transition-colors">
       {/* Top Header */}
@@ -269,6 +326,7 @@ export default function App() {
         isDarkMode={isDarkMode}
         setIsDarkMode={setIsDarkMode}
         onOpenAiGenerator={() => setIsAiModalOpen(true)}
+        onOpenCustomizer={() => setIsCustomizerOpen(true)}
       />
 
       {/* Main Workspace: Automatically fluid & responsive on all device screen sizes */}
@@ -303,6 +361,7 @@ export default function App() {
 
         {currentView === 'editor' && activeDiagram && activeProject && (
           <DiagramEditor
+            key={activeDiagram.id}
             diagram={activeDiagram}
             project={activeProject}
             onSaveDiagram={handleSaveDiagram}
@@ -313,6 +372,7 @@ export default function App() {
               setCurrentValidationIssues(issues);
               setIsValidationModalOpen(true);
             }}
+            onOpenCustomizer={() => setIsCustomizerOpen(true)}
             isDarkMode={isDarkMode}
           />
         )}
@@ -328,6 +388,20 @@ export default function App() {
             createDefaultDiagram('temp', 'New Architecture Diagram', 'CLASS')
           }
           onApplyChanges={handleApplyAi}
+        />
+      )}
+
+      {/* UI Customization Modal (Light/Dark Mode & 16 Color Palettes) */}
+      {isCustomizerOpen && (
+        <ThemeCustomizerModal
+          isOpen={isCustomizerOpen}
+          onClose={() => setIsCustomizerOpen(false)}
+          isDarkMode={isDarkMode}
+          setIsDarkMode={setIsDarkMode}
+          activePaletteId={activePaletteId}
+          onSelectPalette={(id) => setActivePaletteId(id)}
+          onApplyPaletteToDiagram={handleApplyPaletteToDiagram}
+          hasActiveDiagram={Boolean(activeDiagram && activeProject)}
         />
       )}
 

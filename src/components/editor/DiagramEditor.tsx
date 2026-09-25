@@ -47,6 +47,7 @@ import {
   getRelationshipGeometry,
 } from '../../services/diagramRenderer';
 import { validateUmlDiagram } from '../../services/validationService';
+import { getAccessibleTextColor } from '../../services/colorUtils';
 
 interface DiagramEditorProps {
   diagram: Diagram;
@@ -56,6 +57,7 @@ interface DiagramEditorProps {
   onOpenAiAssistant: () => void;
   onOpenExportModal: () => void;
   onOpenValidationModal: (issues: ValidationIssue[]) => void;
+  onOpenCustomizer?: () => void;
   isDarkMode?: boolean;
 }
 
@@ -69,6 +71,7 @@ export const DiagramEditor: React.FC<DiagramEditorProps> = ({
   onOpenAiAssistant,
   onOpenExportModal,
   onOpenValidationModal,
+  onOpenCustomizer,
   isDarkMode = true,
 }) => {
   // Current Diagram State
@@ -100,6 +103,21 @@ export const DiagramEditor: React.FC<DiagramEditorProps> = ({
   const isDraggingRef = useRef(false);
   const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const elementDragOffsetsRef = useRef<Map<string, { startX: number; startY: number }>>(new Map());
+  const preDragDiagramRef = useRef<Diagram | null>(null);
+
+  // Maintain currentDiagram in a ref to avoid stale closures in callbacks
+  const currentDiagramRef = useRef<Diagram>(diagram);
+  useEffect(() => {
+    currentDiagramRef.current = currentDiagram;
+  }, [currentDiagram]);
+
+  // Sync currentDiagram when diagram prop updates externally (AI Assist or Theme Palette Apply)
+  useEffect(() => {
+    if (diagram.id !== currentDiagramRef.current.id || diagram.updatedAt !== currentDiagramRef.current.updatedAt) {
+      setCurrentDiagram(diagram);
+      currentDiagramRef.current = diagram;
+    }
+  }, [diagram]);
 
   // Connection dragging
   const [connectionDraft, setConnectionDraft] = useState<{
@@ -111,18 +129,19 @@ export const DiagramEditor: React.FC<DiagramEditorProps> = ({
   // Validation diagnostics
   const validationIssues = validateUmlDiagram(currentDiagram);
 
-  // Save changes and record undo
+  // Save changes and record undo cleanly without calling external setState during render
   const updateDiagram = useCallback(
     (updater: (prev: Diagram) => Diagram, recordUndo: boolean = true) => {
-      setCurrentDiagram((prev) => {
-        if (recordUndo) {
-          setUndoStack((u) => [...u.slice(-30), prev]);
-          setRedoStack([]);
-        }
-        const updated = updater(prev);
+      const prev = currentDiagramRef.current;
+      const updated = updater(prev);
+      currentDiagramRef.current = updated;
+
+      if (recordUndo) {
+        setUndoStack((u) => [...u.slice(-30), prev]);
+        setRedoStack([]);
         onSaveDiagram(updated);
-        return updated;
-      });
+      }
+      setCurrentDiagram(updated);
     },
     [onSaveDiagram]
   );
@@ -131,19 +150,21 @@ export const DiagramEditor: React.FC<DiagramEditorProps> = ({
     if (undoStack.length === 0) return;
     const prev = undoStack[undoStack.length - 1];
     setUndoStack((u) => u.slice(0, -1));
-    setRedoStack((r) => [...r, currentDiagram]);
+    setRedoStack((r) => [...r, currentDiagramRef.current]);
+    currentDiagramRef.current = prev;
     setCurrentDiagram(prev);
     onSaveDiagram(prev);
-  }, [undoStack, currentDiagram, onSaveDiagram]);
+  }, [undoStack, onSaveDiagram]);
 
   const handleRedo = useCallback(() => {
     if (redoStack.length === 0) return;
     const next = redoStack[redoStack.length - 1];
     setRedoStack((r) => r.slice(0, -1));
-    setUndoStack((u) => [...u, currentDiagram]);
+    setUndoStack((u) => [...u, currentDiagramRef.current]);
+    currentDiagramRef.current = next;
     setCurrentDiagram(next);
     onSaveDiagram(next);
-  }, [redoStack, currentDiagram, onSaveDiagram]);
+  }, [redoStack, onSaveDiagram]);
 
   const deleteSelected = useCallback(() => {
     updateDiagram((prev) => {
@@ -309,6 +330,7 @@ export const DiagramEditor: React.FC<DiagramEditorProps> = ({
       selectedRelationshipId,
       showHandles: selectedElementIds.size === 1,
       activeConnectionDraft: connectionDraft,
+      isDarkMode,
     });
 
     ctx.restore();
@@ -392,6 +414,7 @@ export const DiagramEditor: React.FC<DiagramEditorProps> = ({
         }
       });
       elementDragOffsetsRef.current = offsets;
+      preDragDiagramRef.current = currentDiagramRef.current;
       isDraggingRef.current = true;
       return;
     }
@@ -470,7 +493,24 @@ export const DiagramEditor: React.FC<DiagramEditorProps> = ({
   };
 
   const handlePointerUp = () => {
+    const wasDraggingElements =
+      isDraggingRef.current &&
+      activeTool === 'select' &&
+      elementDragOffsetsRef.current.size > 0;
+
     isDraggingRef.current = false;
+    elementDragOffsetsRef.current.clear();
+
+    if (wasDraggingElements && preDragDiagramRef.current) {
+      const prev = preDragDiagramRef.current;
+      const current = currentDiagramRef.current;
+      preDragDiagramRef.current = null;
+      if (prev !== current) {
+        setUndoStack((u) => [...u.slice(-30), prev]);
+        setRedoStack([]);
+        onSaveDiagram(current);
+      }
+    }
 
     // Finalize Connection
     if (connectionDraft) {
@@ -920,6 +960,18 @@ export const DiagramEditor: React.FC<DiagramEditorProps> = ({
               </span>
             )}
           </button>
+
+          {/* Theme & Palette Customizer */}
+          {onOpenCustomizer && (
+            <button
+              onClick={onOpenCustomizer}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-all"
+              title="Customize UI, Dark/Light Mode & 16 Color Palettes"
+            >
+              <Palette className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span className="hidden sm:inline">Theme</span>
+            </button>
+          )}
 
           {/* AI Assistant */}
           <button
@@ -1445,7 +1497,7 @@ export const DiagramEditor: React.FC<DiagramEditorProps> = ({
                                       ...el.style,
                                       fillColor: theme.fill,
                                       borderColor: theme.border,
-                                      textColor: theme.text || '#0F172A',
+                                      textColor: getAccessibleTextColor(theme.fill, theme.text),
                                     },
                                   }
                                 : el

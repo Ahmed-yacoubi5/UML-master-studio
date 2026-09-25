@@ -1,4 +1,9 @@
 import { Diagram, DiagramElement, Relationship } from '../types/uml';
+import {
+  getAccessibleTextColor,
+  getAccessibleSecondaryTextColor,
+  getAccessibleDividerColor,
+} from './colorUtils';
 
 export interface RenderOptions {
   scale?: number;
@@ -11,6 +16,7 @@ export interface RenderOptions {
     currentX: number;
     currentY: number;
   } | null;
+  isDarkMode?: boolean;
 }
 
 export function computeDiagramBounds(elements: DiagramElement[]): {
@@ -74,13 +80,15 @@ export function renderDiagramToCanvas(
   }
 
   // 1. Draw Relationships first (behind elements)
+  const isDark = Boolean(options.isDarkMode);
+
   diagram.relationships.forEach((rel) => {
     const src = elementMap.get(rel.sourceId);
     const tgt = elementMap.get(rel.targetId);
     if (!src || !tgt) return;
 
     const isSelected = options.selectedRelationshipId === rel.id;
-    drawRelationship(ctx, rel, src, tgt, isSelected);
+    drawRelationship(ctx, rel, src, tgt, isSelected, isDark);
   });
 
   // Draw active draft connection
@@ -89,7 +97,7 @@ export function renderDiagramToCanvas(
     if (src) {
       const srcCenter = getElementCenter(src);
       ctx.save();
-      ctx.strokeStyle = '#0284C7';
+      ctx.strokeStyle = isDark ? '#38BDF8' : '#0284C7';
       ctx.lineWidth = 2;
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
@@ -103,7 +111,7 @@ export function renderDiagramToCanvas(
   // 2. Draw Elements
   elements.forEach((el) => {
     const isSelected = options.selectedElementIds?.has(el.id) || false;
-    drawElement(ctx, el, isSelected, options.showHandles || false);
+    drawElement(ctx, el, isSelected, options.showHandles || false, isDark);
   });
 
   ctx.restore();
@@ -257,7 +265,8 @@ function drawRelationship(
   rel: Relationship,
   src: DiagramElement,
   tgt: DiagramElement,
-  isSelected: boolean
+  isSelected: boolean,
+  isDark: boolean = false
 ): void {
   const srcCenter = getElementCenter(src);
   const tgtCenter = getElementCenter(tgt);
@@ -272,10 +281,10 @@ function drawRelationship(
   // Outer glowing halo when selected
   if (isSelected) {
     ctx.save();
-    ctx.strokeStyle = '#3B82F6';
+    ctx.strokeStyle = isDark ? '#60A5FA' : '#3B82F6';
     ctx.lineWidth = (rel.style?.strokeWidth || 2) + 8;
     ctx.lineCap = 'round';
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = 0.4;
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
     ctx.lineTo(p2.x, p2.y);
@@ -283,8 +292,12 @@ function drawRelationship(
     ctx.restore();
   }
 
+  // Base stroke color adapted for dark mode
+  const defaultStroke = isDark ? '#94A3B8' : '#475569';
+  const strokeColor = isSelected ? (isDark ? '#60A5FA' : '#2563EB') : rel.style?.strokeColor || defaultStroke;
+
   ctx.save();
-  ctx.strokeStyle = isSelected ? '#2563EB' : rel.style?.strokeColor || '#475569';
+  ctx.strokeStyle = strokeColor;
   ctx.lineWidth = isSelected ? 3 : rel.style?.strokeWidth || 2;
 
   const isDashed =
@@ -309,13 +322,13 @@ function drawRelationship(
 
   // Draw Arrowhead at Target
   ctx.setLineDash([]);
-  drawArrowHead(ctx, p2.x, p2.y, angle, rel.type, isSelected);
+  drawArrowHead(ctx, p2.x, p2.y, angle, rel.type, isSelected, isDark);
 
   // Selection interactive handles
   if (isSelected) {
     const drawHandle = (hx: number, hy: number) => {
       ctx.save();
-      ctx.fillStyle = '#2563EB';
+      ctx.fillStyle = isDark ? '#60A5FA' : '#2563EB';
       ctx.strokeStyle = '#FFFFFF';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -329,54 +342,69 @@ function drawRelationship(
     drawHandle(midX, midY);
   }
 
-  // Draw Label Pill
+  // Draw Label Pill (Adapts background and text for crystal-clear readability)
   if (rel.label) {
     ctx.font = '11px "Plus Jakarta Sans", sans-serif';
     const textWidth = ctx.measureText(rel.label).width;
     const padX = 8;
     const padY = 3;
-    const pillH = 18;
-    const pillW = Math.max(textWidth + padX * 2, 28);
+    const pillH = 20;
+    const pillW = Math.max(textWidth + padX * 2, 32);
     const pillX = midX - pillW / 2;
     const pillY = midY - 20;
 
     ctx.save();
-    ctx.fillStyle = isSelected ? '#EFF6FF' : '#FFFFFF';
-    ctx.strokeStyle = isSelected ? '#3B82F6' : '#CBD5E1';
+    // In dark mode: dark slate pill with bright text; In light mode: clean white pill with dark text
+    if (isDark) {
+      ctx.fillStyle = isSelected ? '#1E3A8A' : '#1E293B';
+      ctx.strokeStyle = isSelected ? '#60A5FA' : '#475569';
+    } else {
+      ctx.fillStyle = isSelected ? '#EFF6FF' : '#FFFFFF';
+      ctx.strokeStyle = isSelected ? '#3B82F6' : '#CBD5E1';
+    }
     ctx.lineWidth = isSelected ? 1.5 : 1;
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+    ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.1)';
     ctx.shadowBlur = 4;
 
     ctx.beginPath();
     if (typeof (ctx as any).roundRect === 'function') {
-      (ctx as any).roundRect(pillX, pillY, pillW, pillH, 4);
+      (ctx as any).roundRect(pillX, pillY, pillW, pillH, 5);
     } else {
       ctx.rect(pillX, pillY, pillW, pillH);
     }
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = isSelected ? '#1D4ED8' : '#334155';
+    // Text color inside label pill guaranteed to contrast
+    if (isDark) {
+      ctx.fillStyle = isSelected ? '#93C5FD' : '#F8FAFC';
+    } else {
+      ctx.fillStyle = isSelected ? '#1D4ED8' : '#0F172A';
+    }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(rel.label, midX, pillY + pillH / 2);
     ctx.restore();
   }
 
-  // Multiplicities
+  // Multiplicities (Adapts for dark/light mode visibility)
+  const multColor = isSelected
+    ? isDark ? '#93C5FD' : '#1D4ED8'
+    : isDark ? '#E2E8F0' : '#334155';
+
   if (rel.sourceMultiplicity) {
-    const smX = p1.x + Math.cos(angle) * 24;
-    const smY = p1.y + Math.sin(angle) * 24;
-    ctx.font = '10px "Plus Jakarta Sans", sans-serif';
-    ctx.fillStyle = isSelected ? '#1D4ED8' : '#475569';
+    const smX = p1.x + Math.cos(angle) * 26;
+    const smY = p1.y + Math.sin(angle) * 26;
+    ctx.font = 'bold 10px "Plus Jakarta Sans", sans-serif';
+    ctx.fillStyle = multColor;
     ctx.fillText(rel.sourceMultiplicity, smX, smY - 6);
   }
 
   if (rel.targetMultiplicity) {
-    const tmX = p2.x - Math.cos(angle) * 32;
-    const tmY = p2.y - Math.sin(angle) * 32;
-    ctx.font = '10px "Plus Jakarta Sans", sans-serif';
-    ctx.fillStyle = isSelected ? '#1D4ED8' : '#475569';
+    const tmX = p2.x - Math.cos(angle) * 34;
+    const tmY = p2.y - Math.sin(angle) * 34;
+    ctx.font = 'bold 10px "Plus Jakarta Sans", sans-serif';
+    ctx.fillStyle = multColor;
     ctx.fillText(rel.targetMultiplicity, tmX, tmY - 6);
   }
 
@@ -389,7 +417,8 @@ function drawArrowHead(
   y: number,
   angle: number,
   type: Relationship['type'],
-  isSelected: boolean
+  isSelected: boolean,
+  isDark: boolean = false
 ): void {
   ctx.save();
   ctx.translate(x, y);
@@ -397,13 +426,14 @@ function drawArrowHead(
 
   const arrowSize = 12;
   ctx.lineWidth = 2;
-  ctx.strokeStyle = isSelected ? '#3B82F6' : '#475569';
+  const defaultStroke = isDark ? '#94A3B8' : '#475569';
+  ctx.strokeStyle = isSelected ? (isDark ? '#60A5FA' : '#3B82F6') : defaultStroke;
 
   switch (type) {
     case 'INHERITANCE':
     case 'REALIZATION': {
-      // Hollow closed triangle
-      ctx.fillStyle = '#FFFFFF';
+      // Hollow closed triangle - adapt hollow fill for dark mode
+      ctx.fillStyle = isDark ? '#0F172A' : '#FFFFFF';
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(-arrowSize, -arrowSize * 0.6);
@@ -415,7 +445,7 @@ function drawArrowHead(
     }
     case 'COMPOSITION': {
       // Filled diamond
-      ctx.fillStyle = isSelected ? '#3B82F6' : '#334155';
+      ctx.fillStyle = isSelected ? (isDark ? '#60A5FA' : '#3B82F6') : (isDark ? '#CBD5E1' : '#334155');
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(-arrowSize * 0.8, -arrowSize * 0.5);
@@ -428,7 +458,7 @@ function drawArrowHead(
     }
     case 'AGGREGATION': {
       // Hollow diamond
-      ctx.fillStyle = '#FFFFFF';
+      ctx.fillStyle = isDark ? '#0F172A' : '#FFFFFF';
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(-arrowSize * 0.8, -arrowSize * 0.5);
@@ -473,63 +503,64 @@ function drawElement(
   ctx: CanvasRenderingContext2D,
   el: DiagramElement,
   isSelected: boolean,
-  showHandles: boolean
+  showHandles: boolean,
+  isDark: boolean = false
 ): void {
   ctx.save();
   ctx.globalAlpha = el.style.opacity ?? 1;
 
-  // Specific Element Renderers
+  // Specific Element Renderers (with automatic text readability adaptation)
   switch (el.type) {
     case 'CLASS':
     case 'INTERFACE':
     case 'ABSTRACT_CLASS':
     case 'ENUM':
     case 'OBJECT':
-      drawClassBox(ctx, el);
+      drawClassBox(ctx, el, isDark);
       break;
     case 'USE_CASE':
-      drawUseCaseOval(ctx, el);
+      drawUseCaseOval(ctx, el, isDark);
       break;
     case 'ACTOR':
-      drawActorStickFigure(ctx, el);
+      drawActorStickFigure(ctx, el, isDark);
       break;
     case 'SYSTEM_BOUNDARY':
-      drawSystemBoundary(ctx, el);
+      drawSystemBoundary(ctx, el, isDark);
       break;
     case 'INITIAL_NODE':
     case 'INITIAL_STATE':
-      drawInitialNode(ctx, el);
+      drawInitialNode(ctx, el, isDark);
       break;
     case 'FINAL_NODE':
     case 'FINAL_STATE':
-      drawFinalNode(ctx, el);
+      drawFinalNode(ctx, el, isDark);
       break;
     case 'ACTION':
-      drawActionNode(ctx, el);
+      drawActionNode(ctx, el, isDark);
       break;
     case 'DECISION':
     case 'MERGE':
-      drawDecisionDiamond(ctx, el);
+      drawDecisionDiamond(ctx, el, isDark);
       break;
     case 'FORK':
     case 'JOIN':
-      drawForkJoinBar(ctx, el);
+      drawForkJoinBar(ctx, el, isDark);
       break;
     case 'LIFELINE':
-      drawLifeline(ctx, el);
+      drawLifeline(ctx, el, isDark);
       break;
     case 'STATE':
     case 'COMPOSITE_STATE':
-      drawStateBox(ctx, el);
+      drawStateBox(ctx, el, isDark);
       break;
     default:
-      drawGenericBox(ctx, el);
+      drawGenericBox(ctx, el, isDark);
       break;
   }
 
   // Selection outline & handles
   if (isSelected) {
-    ctx.strokeStyle = '#2563EB';
+    ctx.strokeStyle = isDark ? '#60A5FA' : '#2563EB';
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 4]);
     const p = 4;
@@ -537,20 +568,28 @@ function drawElement(
     ctx.setLineDash([]);
 
     if (showHandles) {
-      drawResizeHandles(ctx, el);
+      drawResizeHandles(ctx, el, isDark);
     }
   }
 
   ctx.restore();
 }
 
-function drawClassBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawClassBox(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
   const isInterface = el.type === 'INTERFACE' || el.stereotype?.includes('interface');
 
+  const bgColor = style.fillColor || (isDark ? '#1E293B' : '#FFFFFF');
+  const borderColor = style.borderColor || (isDark ? '#475569' : '#334155');
+
+  // Compute adaptive high-contrast text and divider colors
+  const primaryTextColor = getAccessibleTextColor(bgColor, style.textColor);
+  const secondaryTextColor = getAccessibleSecondaryTextColor(bgColor);
+  const dividerColor = getAccessibleDividerColor(bgColor, borderColor);
+
   // Box background
-  ctx.fillStyle = style.fillColor || '#FFFFFF';
-  ctx.strokeStyle = style.borderColor || '#334155';
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = style.borderWidth || 2;
   if (isInterface) {
     ctx.setLineDash([4, 2]);
@@ -563,23 +602,28 @@ function drawClassBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
   // Title section
   let currentY = y + 16;
   ctx.textAlign = 'center';
-  ctx.fillStyle = style.textColor || '#0F172A';
+  ctx.fillStyle = primaryTextColor;
 
   if (el.stereotype) {
     ctx.font = 'italic 11px "Plus Jakarta Sans", sans-serif';
+    ctx.fillStyle = secondaryTextColor;
     ctx.fillText(el.stereotype, x + width / 2, currentY);
     currentY += 14;
   } else if (isInterface) {
     ctx.font = 'italic 11px "Plus Jakarta Sans", sans-serif';
+    ctx.fillStyle = secondaryTextColor;
     ctx.fillText('<<interface>>', x + width / 2, currentY);
     currentY += 14;
   }
 
+  ctx.fillStyle = primaryTextColor;
   ctx.font = `bold ${style.fontSize || 13}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillText(el.name, x + width / 2, currentY);
   currentY += 12;
 
   // Divider 1
+  ctx.strokeStyle = dividerColor;
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x, currentY);
   ctx.lineTo(x + width, currentY);
@@ -589,6 +633,7 @@ function drawClassBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
   currentY += 16;
   ctx.textAlign = 'left';
   ctx.font = `${(style.fontSize || 13) - 1}px "Fira Code", monospace`;
+  ctx.fillStyle = primaryTextColor;
 
   if (el.attributes && el.attributes.length > 0) {
     el.attributes.forEach((attr) => {
@@ -607,6 +652,7 @@ function drawClassBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
 
   // Methods
   currentY += 16;
+  ctx.fillStyle = primaryTextColor;
   if (el.methods && el.methods.length > 0) {
     el.methods.forEach((method) => {
       ctx.fillText(method, x + 10, currentY);
@@ -615,15 +661,19 @@ function drawClassBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
   }
 }
 
-function drawUseCaseOval(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawUseCaseOval(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
   const rx = width / 2;
   const ry = height / 2;
   const cx = x + rx;
   const cy = y + ry;
 
-  ctx.fillStyle = style.fillColor || '#ECFDF5';
-  ctx.strokeStyle = style.borderColor || '#059669';
+  const bgColor = style.fillColor || (isDark ? '#064E3B' : '#ECFDF5');
+  const borderColor = style.borderColor || (isDark ? '#34D399' : '#059669');
+  const textColor = getAccessibleTextColor(bgColor, style.textColor);
+
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = style.borderWidth || 2;
 
   ctx.beginPath();
@@ -631,20 +681,25 @@ function drawUseCaseOval(ctx: CanvasRenderingContext2D, el: DiagramElement): voi
   ctx.fill();
   ctx.stroke();
 
-  // Center text
+  // Center text (guaranteed contrast)
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = style.textColor || '#064E3B';
-  ctx.font = `500 ${style.fontSize || 13}px "Plus Jakarta Sans", sans-serif`;
+  ctx.fillStyle = textColor;
+  ctx.font = `600 ${style.fontSize || 13}px "Plus Jakarta Sans", sans-serif`;
   wrapText(ctx, el.name, cx, cy, width - 24, 16);
 }
 
-function drawActorStickFigure(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawActorStickFigure(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
   const cx = x + width / 2;
 
-  ctx.strokeStyle = style.borderColor || '#0284C7';
-  ctx.fillStyle = style.fillColor || '#E0F2FE';
+  const borderColor = style.borderColor || (isDark ? '#38BDF8' : '#0284C7');
+  const fillColor = style.fillColor || (isDark ? '#0C4A6E' : '#E0F2FE');
+  // Actor name is outside figure, so adapt against the canvas background
+  const labelColor = isDark ? '#F8FAFC' : (style.textColor || '#0F172A');
+
+  ctx.strokeStyle = borderColor;
+  ctx.fillStyle = fillColor;
   ctx.lineWidth = style.borderWidth || 2;
 
   // Head
@@ -680,16 +735,20 @@ function drawActorStickFigure(ctx: CanvasRenderingContext2D, el: DiagramElement)
 
   // Label
   ctx.textAlign = 'center';
-  ctx.fillStyle = style.textColor || '#0F172A';
-  ctx.font = `600 ${style.fontSize || 12}px "Plus Jakarta Sans", sans-serif`;
+  ctx.fillStyle = labelColor;
+  ctx.font = `bold ${style.fontSize || 12}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillText(el.name, cx, y + height + 14);
 }
 
-function drawSystemBoundary(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawSystemBoundary(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
 
-  ctx.fillStyle = style.fillColor || '#F8FAFC';
-  ctx.strokeStyle = style.borderColor || '#94A3B8';
+  const bgColor = style.fillColor || (isDark ? 'rgba(30, 41, 59, 0.4)' : '#F8FAFC');
+  const borderColor = style.borderColor || (isDark ? '#64748B' : '#94A3B8');
+  const textColor = isDark ? '#F1F5F9' : (style.textColor || '#334155');
+
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = style.borderWidth || 2;
   ctx.setLineDash([6, 4]);
 
@@ -698,50 +757,56 @@ function drawSystemBoundary(ctx: CanvasRenderingContext2D, el: DiagramElement): 
   ctx.setLineDash([]);
 
   // Title on top
-  ctx.fillStyle = style.textColor || '#334155';
+  ctx.fillStyle = textColor;
   ctx.font = `bold ${style.fontSize || 14}px "Plus Jakarta Sans", sans-serif`;
   ctx.textAlign = 'left';
   ctx.fillText(el.name, x + 16, y + 24);
 }
 
-function drawInitialNode(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawInitialNode(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
   const r = Math.min(width, height) / 2;
   const cx = x + width / 2;
   const cy = y + height / 2;
 
-  ctx.fillStyle = style.fillColor || '#0F172A';
+  ctx.fillStyle = style.fillColor || (isDark ? '#38BDF8' : '#0F172A');
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
 }
 
-function drawFinalNode(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawFinalNode(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
   const r = Math.min(width, height) / 2;
   const cx = x + width / 2;
   const cy = y + height / 2;
 
+  const color = style.borderColor || style.fillColor || (isDark ? '#34D399' : '#0F172A');
+
   // Outer ring
-  ctx.strokeStyle = style.borderColor || '#0F172A';
+  ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
 
   // Inner solid circle
-  ctx.fillStyle = style.fillColor || '#0F172A';
+  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.arc(cx, cy, r - 5, 0, Math.PI * 2);
   ctx.fill();
 }
 
-function drawActionNode(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawActionNode(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
   const radius = 16;
 
-  ctx.fillStyle = style.fillColor || '#F0F9FF';
-  ctx.strokeStyle = style.borderColor || '#0284C7';
+  const bgColor = style.fillColor || (isDark ? '#1E293B' : '#F0F9FF');
+  const borderColor = style.borderColor || (isDark ? '#38BDF8' : '#0284C7');
+  const textColor = getAccessibleTextColor(bgColor, style.textColor);
+
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = style.borderWidth || 2;
 
   drawRoundedRect(ctx, x, y, width, height, radius);
@@ -750,18 +815,21 @@ function drawActionNode(ctx: CanvasRenderingContext2D, el: DiagramElement): void
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = style.textColor || '#0F172A';
-  ctx.font = `500 ${style.fontSize || 13}px "Plus Jakarta Sans", sans-serif`;
+  ctx.fillStyle = textColor;
+  ctx.font = `600 ${style.fontSize || 13}px "Plus Jakarta Sans", sans-serif`;
   wrapText(ctx, el.name, x + width / 2, y + height / 2, width - 20, 16);
 }
 
-function drawDecisionDiamond(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawDecisionDiamond(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
   const cx = x + width / 2;
   const cy = y + height / 2;
 
-  ctx.fillStyle = style.fillColor || '#FEF9C3';
-  ctx.strokeStyle = style.borderColor || '#CA8A04';
+  const bgColor = style.fillColor || (isDark ? '#713F12' : '#FEF9C3');
+  const borderColor = style.borderColor || (isDark ? '#F59E0B' : '#CA8A04');
+
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = style.borderWidth || 2;
 
   ctx.beginPath();
@@ -775,26 +843,30 @@ function drawDecisionDiamond(ctx: CanvasRenderingContext2D, el: DiagramElement):
 
   if (el.name && el.name !== 'Decision') {
     ctx.textAlign = 'center';
-    ctx.fillStyle = style.textColor || '#713F12';
-    ctx.font = `600 11px "Plus Jakarta Sans", sans-serif`;
+    ctx.fillStyle = isDark ? '#FEF3C7' : (style.textColor || '#713F12');
+    ctx.font = `bold 11px "Plus Jakarta Sans", sans-serif`;
     ctx.fillText(el.name, cx, y + height + 14);
   }
 }
 
-function drawForkJoinBar(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawForkJoinBar(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
-  ctx.fillStyle = style.fillColor || '#0F172A';
+  ctx.fillStyle = style.fillColor || (isDark ? '#E2E8F0' : '#0F172A');
   ctx.fillRect(x, y, width, height);
 }
 
-function drawLifeline(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawLifeline(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
   const lineLength = el.sequenceLifelineLength || 400;
   const cx = x + width / 2;
 
+  const bgColor = style.fillColor || (isDark ? '#1E293B' : '#E0F2FE');
+  const borderColor = style.borderColor || (isDark ? '#38BDF8' : '#0284C7');
+  const textColor = getAccessibleTextColor(bgColor, style.textColor);
+
   // Header Box
-  ctx.fillStyle = style.fillColor || '#E0F2FE';
-  ctx.strokeStyle = style.borderColor || '#0284C7';
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = style.borderWidth || 2;
 
   ctx.fillRect(x, y, width, height);
@@ -802,12 +874,12 @@ function drawLifeline(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = style.textColor || '#0369A1';
+  ctx.fillStyle = textColor;
   ctx.font = `bold ${style.fontSize || 13}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillText(el.name, cx, y + height / 2);
 
   // Dashed Lifeline extending downward
-  ctx.strokeStyle = '#94A3B8';
+  ctx.strokeStyle = isDark ? '#64748B' : '#94A3B8';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([6, 4]);
   ctx.beginPath();
@@ -817,12 +889,17 @@ function drawLifeline(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
   ctx.setLineDash([]);
 }
 
-function drawStateBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawStateBox(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
   const radius = 12;
 
-  ctx.fillStyle = style.fillColor || '#F0F9FF';
-  ctx.strokeStyle = style.borderColor || '#0284C7';
+  const bgColor = style.fillColor || (isDark ? '#1E293B' : '#F0F9FF');
+  const borderColor = style.borderColor || (isDark ? '#38BDF8' : '#0284C7');
+  const textColor = getAccessibleTextColor(bgColor, style.textColor);
+  const secondaryTextColor = getAccessibleSecondaryTextColor(bgColor);
+
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = style.borderWidth || 2;
 
   drawRoundedRect(ctx, x, y, width, height, radius);
@@ -830,7 +907,7 @@ function drawStateBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
   ctx.stroke();
 
   ctx.textAlign = 'center';
-  ctx.fillStyle = style.textColor || '#0369A1';
+  ctx.fillStyle = textColor;
   ctx.font = `bold ${style.fontSize || 13}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillText(el.name, x + width / 2, y + 24);
 
@@ -838,12 +915,12 @@ function drawStateBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
     ctx.beginPath();
     ctx.moveTo(x, y + 34);
     ctx.lineTo(x + width, y + 34);
-    ctx.strokeStyle = style.borderColor || '#0284C7';
+    ctx.strokeStyle = borderColor;
     ctx.stroke();
 
     ctx.textAlign = 'left';
     ctx.font = `11px "Fira Code", monospace`;
-    ctx.fillStyle = '#475569';
+    ctx.fillStyle = secondaryTextColor;
     const lines = el.notes.split('\n');
     lines.forEach((l, idx) => {
       ctx.fillText(l, x + 10, y + 50 + idx * 14);
@@ -851,10 +928,14 @@ function drawStateBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
   }
 }
 
-function drawGenericBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawGenericBox(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const { x, y, width, height, style } = el;
-  ctx.fillStyle = style.fillColor || '#F8FAFC';
-  ctx.strokeStyle = style.borderColor || '#475569';
+  const bgColor = style.fillColor || (isDark ? '#1E293B' : '#F8FAFC');
+  const borderColor = style.borderColor || (isDark ? '#64748B' : '#475569');
+  const textColor = getAccessibleTextColor(bgColor, style.textColor);
+
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = style.borderWidth || 2;
 
   ctx.fillRect(x, y, width, height);
@@ -862,12 +943,12 @@ function drawGenericBox(ctx: CanvasRenderingContext2D, el: DiagramElement): void
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = style.textColor || '#0F172A';
-  ctx.font = `600 ${style.fontSize || 13}px "Plus Jakarta Sans", sans-serif`;
+  ctx.fillStyle = textColor;
+  ctx.font = `bold ${style.fontSize || 13}px "Plus Jakarta Sans", sans-serif`;
   ctx.fillText(el.name, x + width / 2, y + height / 2);
 }
 
-function drawResizeHandles(ctx: CanvasRenderingContext2D, el: DiagramElement): void {
+function drawResizeHandles(ctx: CanvasRenderingContext2D, el: DiagramElement, isDark: boolean = false): void {
   const handles = [
     { x: el.x, y: el.y },
     { x: el.x + el.width, y: el.y },
@@ -875,7 +956,7 @@ function drawResizeHandles(ctx: CanvasRenderingContext2D, el: DiagramElement): v
     { x: el.x, y: el.y + el.height },
   ];
 
-  ctx.fillStyle = '#2563EB';
+  ctx.fillStyle = isDark ? '#60A5FA' : '#2563EB';
   ctx.strokeStyle = '#FFFFFF';
   ctx.lineWidth = 1.5;
 

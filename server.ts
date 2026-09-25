@@ -52,39 +52,62 @@ app.post('/api/ai/generate', async (req, res) => {
 
     if (!ai) {
       return res.status(503).json({
-        error: 'Gemini API key is not configured.',
+        error: 'Gemini API key is not configured. Please set the GEMINI_API_KEY environment variable in your project settings.',
         fallbackAvailable: true,
       });
     }
 
-    const systemInstruction = `You are an expert UML modeling assistant for UML Master Studio.
-You must return a valid JSON object matching the requested UML diagram type (${type}).
-Rules:
-1. Strict schema compliance: output only valid JSON.
-2. Every element must have:
-   - id: unique string (e.g. "elem_1", "elem_2")
-   - type: matching diagram standard element types (e.g. for CLASS: "CLASS", "INTERFACE", "ENUM"; for USE_CASE: "ACTOR", "USE_CASE", "SYSTEM_BOUNDARY"; for ACTIVITY: "INITIAL_NODE", "ACTION", "DECISION", "FINAL_NODE"; for SEQUENCE: "LIFELINE", "ACTIVATION"; for STATE: "INITIAL_STATE", "STATE", "FINAL_STATE")
-   - name: clear label/name
-   - x: integer position (layout nicely with at least 80px gaps, between 100 and 900)
-   - y: integer position (between 80 and 700)
-   - width: integer (default 180-240 for classes, 140 for use cases, 60 for actors, 140 for actions)
-   - height: integer (120-180 for classes, 70 for use cases, 90 for actors, 60 for actions)
-   - attributes: array of string items (e.g. ["- id: Long", "+ name: String"]) for classes/entities
-   - methods: array of string items (e.g. ["+ register(): Boolean", "+ getDetails(): String"])
-   - stereotype: optional string (e.g. "<<interface>>", "<<entity>>")
-3. Every relationship must have:
-   - id: unique string (e.g. "rel_1")
-   - type: one of "ASSOCIATION", "DIRECTED_ASSOCIATION", "AGGREGATION", "COMPOSITION", "INHERITANCE", "REALIZATION", "DEPENDENCY", "INCLUDE", "EXTEND", "CONTROL_FLOW", "MESSAGE", "RETURN_MESSAGE"
-   - sourceId: id of source element
-   - targetId: id of target element
-   - label: optional string description
-   - sourceMultiplicity: optional (e.g. "1", "0..*")
-   - targetMultiplicity: optional (e.g. "1..*", "*")
-4. Return an object with: diagramType, title, elements, relationships.`;
+    const systemInstruction = `You are a Principal Software Architect and UML 2.5 Modeling Expert for UML Master Studio.
+Your mission is to generate comprehensive, production-grade, multi-entity UML diagrams matching the requested diagram type (${type}).
+
+CRITICAL ARCHITECTURAL REQUIREMENTS:
+1. ENTITY COUNT & COMPLETENESS:
+   - For ANY system requirement, generate a comprehensive, realistic architecture containing at least 5 to 9 distinct entities/classes/components/actors.
+   - NEVER generate only 1 or 2 trivial entities unless the user explicitly requests a 2-entity diagram.
+   - For CLASS diagrams: include domain models, controllers/services, interfaces (stereotype: "<<interface>>"), and enums. Each class must have 3 to 6 typed attributes (e.g. "- id: UUID", "+ email: String", "- status: OrderStatus") and 2 to 4 domain methods with parameters and return types (e.g. "+ processOrder(cart: Cart): Invoice", "+ cancel(): Boolean").
+   - For USE_CASE diagrams: include 2 to 3 distinct Actors (e.g., Customer, Admin, Payment Gateway) and 5 to 8 Use Cases inside a system boundary, connected by ASSOCIATION, INCLUDE, and EXTEND.
+   - For ACTIVITY diagrams: include Initial Node, 5 to 8 Action nodes, Decision/Merge nodes, and Final Node connected by CONTROL_FLOW.
+   - For SEQUENCE diagrams: include 4 to 6 Lifelines (e.g., Client, ApiGateway, OrderService, PaymentProcessor, InventoryDb) with 6 to 10 sequential MESSAGE and RETURN_MESSAGE relations.
+   - For STATE_MACHINE diagrams: include Initial State, 4 to 7 States (e.g., Draft, Processing, Approved, Shipped, Cancelled), and Final State.
+
+2. RELATIONSHIPS & ASSOCIATIONS:
+   - Deeply interconnect the entities with at least 5 to 10 realistic relationships.
+   - Use standard UML types: "INHERITANCE", "REALIZATION", "COMPOSITION", "AGGREGATION", "ASSOCIATION", "DIRECTED_ASSOCIATION", "DEPENDENCY", "INCLUDE", "EXTEND", "CONTROL_FLOW", "MESSAGE", "RETURN_MESSAGE".
+   - Each relationship MUST have:
+     * id: unique string (e.g. "rel_1")
+     * type: standard UML type
+     * sourceId: valid id of source element
+     * targetId: valid id of target element
+     * label: descriptive verb/phrase (e.g. "manages", "contains", "verifies", "notifies")
+     * sourceMultiplicity: multiplicity string (e.g. "1", "0..*")
+     * targetMultiplicity: multiplicity string (e.g. "1..*", "*")
+
+3. NON-OVERLAPPING 2D CANVAS LAYOUT:
+   - Arrange elements cleanly in an organized multi-column, multi-row grid so NO elements overlap.
+   - Horizontal spacing: Column 1 (x: 80-120), Column 2 (x: 420-460), Column 3 (x: 760-800), Column 4 (x: 1100-1140).
+   - Vertical spacing: Row 1 (y: 80-120), Row 2 (y: 380-420), Row 3 (y: 680-720).
+   - Dimensions:
+     * Classes/Interfaces: width 220 to 280, height 170 to 240
+     * Use Cases: width 170 to 210, height 70 to 90
+     * Actors: width 70, height 100
+     * Actions: width 170 to 210, height 70 to 90
+     * Lifelines: width 150, height 260
+     * States: width 160, height 90
+
+4. VISUAL TASTE & PALETTE:
+   - Provide clean fillColor and borderColor:
+     * Entities/Models: fillColor "#F0F9FF", borderColor "#0284C7"
+     * Services/Processing: fillColor "#FEFCE8", borderColor "#CA8A04"
+     * Storage/Data: fillColor "#ECFDF5", borderColor "#059669"
+     * Security/Auth: fillColor "#F5F3FF", borderColor "#7C3AED"
+     * Exceptions/Alerts: fillColor "#FEF2F2", borderColor "#DC2626"`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash',
-      contents: `Generate a structured UML ${type} diagram based on this request: "${prompt}". Layout elements neatly with clear relationships.`,
+      contents: `Design an enterprise-grade, comprehensive UML ${type} diagram for this specification:
+"${prompt}"
+
+Requirement: Generate at least 5 to 9 interconnected entities/classes with rich attributes and methods, detailed relationships with multiplicities, and non-overlapping 2D grid coordinates.`,
       config: {
         systemInstruction,
         responseMimeType: 'application/json',
@@ -114,6 +137,9 @@ Rules:
                     type: Type.ARRAY,
                     items: { type: Type.STRING },
                   },
+                  fillColor: { type: Type.STRING },
+                  borderColor: { type: Type.STRING },
+                  textColor: { type: Type.STRING },
                 },
                 required: ['id', 'type', 'name', 'x', 'y'],
               },
@@ -165,24 +191,42 @@ app.post('/api/ai/modify', async (req, res) => {
     const ai = getGeminiClient();
     if (!ai) {
       return res.status(503).json({
-        error: 'Gemini API key is not configured.',
+        error: 'Gemini API key is not configured. Please set the GEMINI_API_KEY environment variable in your project settings.',
         fallbackAvailable: true,
       });
     }
 
-    const promptText = `The user wants to modify this existing UML diagram.
-Current elements: ${JSON.stringify(diagram.elements)}
-Current relationships: ${JSON.stringify(diagram.relationships)}
+    const systemInstruction = `You are a Principal Software Architect and UML 2.5 Modeling Expert for UML Master Studio.
+Your mission is to intelligently modify, expand, or refine an existing UML diagram based on user instructions.
 
-User instruction: "${prompt}"
+CRITICAL MODIFICATION RULES:
+1. PRESERVE & EXPAND:
+   - Preserve existing elements and relationships that are not being explicitly deleted.
+   - When the user asks to add or expand an aspect (e.g. "add payment handling", "add audit logging", "add auth system"), generate complete, production-grade entities with realistic attributes, methods, and relationships connecting them to existing entities.
+   - If user asks to add a subsystem, create all necessary interconnected classes/interfaces (typically 2 to 4 rich entities), not just a single placeholder.
+2. ATTRIBUTES & METHODS:
+   - New or updated entities must have complete, typed attributes and methods with parameters.
+3. NON-OVERLAPPING COORDINATES:
+   - Position new elements in vacant canvas space (x: 80 to 1200, y: 80 to 800) without overlapping existing elements.
+4. RETURN COMPLETE GRAPH:
+   - Return the full updated elements and relationships arrays containing BOTH preserved and new elements.`;
 
-Update, add, or refine elements and relationships to satisfy the instruction. Keep existing IDs for unchanged elements. Return the complete updated elements and relationships array.`;
+    const promptText = `Modify the following UML diagram according to the user request.
+Current elements (${diagram.elements?.length || 0}):
+${JSON.stringify(diagram.elements, null, 2)}
+
+Current relationships (${diagram.relationships?.length || 0}):
+${JSON.stringify(diagram.relationships, null, 2)}
+
+User request: "${prompt}"
+
+Return the complete updated diagram with all preserved and newly generated elements/relationships.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.8-flash',
       contents: promptText,
       config: {
-        systemInstruction: 'You are an expert UML modeling assistant. Output strictly valid JSON matching the updated UML schema.',
+        systemInstruction,
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -210,6 +254,7 @@ Update, add, or refine elements and relationships to satisfy the instruction. Ke
                   },
                   fillColor: { type: Type.STRING },
                   borderColor: { type: Type.STRING },
+                  textColor: { type: Type.STRING },
                 },
                 required: ['id', 'type', 'name', 'x', 'y'],
               },

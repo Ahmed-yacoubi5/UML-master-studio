@@ -86,7 +86,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                 AI UML Assistant
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Server-side Gemini 2.5 Flash intelligence with strict schema validation
+                Server-side Gemini 3.8 Flash enterprise architecture synthesis
               </p>
             </div>
           </div>
